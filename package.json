@@ -11,7 +11,8 @@
     "reset": "tsx scripts/reset.ts",
     "setup:intercom": "tsx scripts/setup-intercom-attributes.ts",
     "sync:intercom": "tsx scripts/sync-to-intercom.ts",
-    "sync:events": "tsx scripts/sync-events-to-intercom.ts"
+    "sync:events": "tsx scripts/sync-events-to-intercom.ts",
+    "cleanup:intercom": "tsx scripts/cleanup-intercom.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
