@@ -4,7 +4,7 @@ import * as readline from "readline";
 
 dotenv.config({ path: resolve(__dirname, "../.env.local") });
 
-import { intercomRequest } from "../lib/intercom";
+import { intercomRequest } from "../src/lib/intercom";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

@@ -5,7 +5,7 @@ import * as readline from "readline";
 
 dotenv.config({ path: resolve(__dirname, "../.env.local") });
 
-import { intercomRequest } from "../lib/intercom";
+import { intercomRequest } from "../src/lib/intercom";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

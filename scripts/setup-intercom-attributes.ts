@@ -3,7 +3,7 @@ import { resolve } from "path";
 
 dotenv.config({ path: resolve(__dirname, "../.env.local") });
 
-import { intercomRequest } from "../lib/intercom";
+import { intercomRequest } from "../src/lib/intercom";
 
 const attributes = [
   { name: "is_demo", model: "contact", data_type: "boolean" },
