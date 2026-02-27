@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase';
-
-const API_KEY = process.env.INTERCOM_CONNECTOR_API_KEY;
+import { validateApiKey } from '@/lib/api-auth';
 
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (!API_KEY || authHeader !== `Bearer ${API_KEY}`) {
-    return NextResponse.json({ error: 'Unauthorised' }, { status: 401 });
+  const authValidation = validateApiKey(request);
+  if (!authValidation.valid) {
+    return authValidation.response!;
   }
 
   const companyId = request.nextUrl.searchParams.get('company_id');
