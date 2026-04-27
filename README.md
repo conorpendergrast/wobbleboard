@@ -21,7 +21,115 @@ Estimated time end-to-end: **30–45 minutes**, most of it waiting on Supabase p
 - A free [**Supabase**](https://supabase.com) account.
 - An [**Intercom**](https://www.intercom.com) account where you have admin rights (a free trial workspace works). Your Intercom workspace must be in the **US region** by default — see [Intercom region](#intercom-region-eu--au-workspaces) below if yours is EU or AU.
 
-## 1. Clone and install
+## Setup with Claude Code (recommended)
+
+This section is the script for using Claude Code to drive the setup end-to-end. It's written for both you and Claude — paste the kickoff prompt below into a fresh Claude Code session in this repo and Claude will turn the phases into a TodoWrite plan and walk you through them.
+
+You'll still do the things only a human in a browser can do: creating the Supabase project, creating the Intercom developer app, and copying secrets out of those dashboards. Claude handles everything else — env file edits, schema application, running the scripts in the right order, smoke-testing the API, and recovering from common failures.
+
+### Why TodoWrite
+
+Use `TodoWrite` so the plan survives context compaction and the session can be resumed. The kickoff prompt below tells Claude to seed the todo list from the phases here. If a session is interrupted, paste the kickoff prompt again — Claude will re-read this section, inspect `.env.local` and the Supabase tables, and figure out which phase to resume from.
+
+### Kickoff prompt
+
+Paste this verbatim into Claude Code:
+
+> Read the "Setup with Claude Code" section of `README.md`. Build a `TodoWrite` plan with one entry per phase in that section, then start Phase 1. For each phase, do the work you can do directly, ask me clearly when you need something only I can provide (a Supabase URL, an access token, a region, etc.), and verify before moving on. Do not run `npm run cleanup:intercom`, `npm run reset`, any deploy command, or `git push` unless I explicitly ask. Once a secret is written into `.env.local`, do not echo it back in any tool output or message. If a phase fails, stop and report — do not skip ahead.
+
+### Phases
+
+Each phase has: **goal · who does what · verification · failure recovery**. Claude should mark each phase `in_progress` before starting it and `completed` only after the verification step passes.
+
+#### Phase 1 — Environment check
+
+- **Goal:** confirm prerequisites are present.
+- **Claude:** run `node --version` and `git --version`. Confirm Node ≥ 20.9. Run `npm install` if `node_modules` is missing. Run `git status` to confirm a clean working tree.
+- **You:** install Node 20+ if missing (`nvm install 20 && nvm use 20`).
+- **Verify:** `node --version` reports v20.9 or newer and `npm install` exits clean.
+- **Failure recovery:** if Node is too old, stop the plan and ask the user to upgrade. Don't try `npm install` against an unsupported Node — it muddies the diagnosis.
+
+#### Phase 2 — Supabase project
+
+- **Goal:** create a Supabase project and capture the URL + service-role key into `.env.local`.
+- **You:** in the Supabase dashboard, create a project. In **Project Settings → API**, copy the **Project URL** and the **service_role** secret. Paste both into the chat.
+- **Claude:** if `.env.local` doesn't exist, `cp .env.example .env.local`. Use `Edit` to set `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. After this point, do not include the service-role key in any message, summary, or shell command argument.
+- **Verify:** read back only the URL hostname (e.g. `xxxx.supabase.co`) and confirm `.env.local` contains both keys with non-empty values. Use `grep -c '^SUPABASE_SERVICE_ROLE_KEY=.\+' .env.local` rather than printing the file.
+- **Failure recovery:** if the URL doesn't match `https://*.supabase.co`, the user pasted the wrong field — ask again. If the user pasted the `anon` key by mistake, you'll find out in Phase 6; flag the possibility now.
+
+#### Phase 3 — Apply the database schema
+
+- **Goal:** create the four tables in the new Supabase project.
+- **Claude:** ask the user to choose Option A (paste `supabase/migrations/001_initial_schema.sql` into the SQL editor at `https://supabase.com/dashboard/project/<ref>/sql/new`) or Option B (`npx supabase login`, `npx supabase link --project-ref <ref>`, `npx supabase db push`). For Option B, run the commands and surface any interactive prompts to the user.
+- **You:** for Option A, paste the SQL and click Run. For Option B, complete the browser login.
+- **Verify:** write a one-off `tsx -e` snippet that uses the env vars to `select count(*) from companies` (expecting 0). If that returns without "relation does not exist", the schema is in place.
+- **Failure recovery:** "relation already exists" means the schema was applied earlier — safe to continue. Auth errors here mean the env from Phase 2 is wrong.
+
+#### Phase 4 — Intercom developer app
+
+- **Goal:** capture an Intercom access token and confirm the workspace region.
+- **You:** in Intercom **Developer Hub**, create a new app, grant the scopes Read and write contacts, Read and write companies, Write events, and Read and write data attributes. Copy the access token. Tell Claude the workspace region (US, EU, or AU).
+- **Claude:** if region is EU or AU, use `Edit` to change `INTERCOM_BASE_URL` in `src/lib/intercom.ts:1` to `https://api.eu.intercom.io` or `https://api.au.intercom.io`. Use `Edit` to set `INTERCOM_ACCESS_TOKEN` in `.env.local`. Verify the token by running a single `curl -sf -H "Authorization: Bearer $TOKEN" -H "Intercom-Version: 2.11" https://api.<region>.intercom.io/me` — pull the token from `.env.local` for the call but don't print it.
+- **Verify:** the `/me` call returns a 200 with an `app` object whose region matches what the user said.
+- **Failure recovery:** 401 → wrong token, ask the user to regenerate. Region mismatch in the response → fix `src/lib/intercom.ts` to match what `/me` reports.
+
+#### Phase 5 — Connector API key
+
+- **Goal:** generate `INTERCOM_CONNECTOR_API_KEY` and store it.
+- **Claude:** generate the key by running `openssl rand -hex 32 | tr -d '\n' > /tmp/wb_key && wc -c /tmp/wb_key` (verify it's 64 chars), then write it into `.env.local` via a script that reads `/tmp/wb_key` and uses `Edit` — never paste the key value into a tool argument or message. Delete `/tmp/wb_key` afterwards.
+- **You:** save the key separately (1Password / your secret store) — you'll need it to call the API in Phase 8 and from any external integration.
+- **Verify:** `grep -E '^INTERCOM_CONNECTOR_API_KEY=[a-f0-9]{64}$' .env.local` returns one match.
+
+#### Phase 6 — Seed the database
+
+- **Goal:** populate companies, contacts, subscriptions, and product_events.
+- **Claude:** run `npm run seed` and capture stdout.
+- **Verify:** stdout shows "5 companies inserted", a non-zero contact count, and a non-zero events count. Spot-check by counting rows from a `tsx -e` snippet.
+- **Failure recovery:** auth error → the user pasted the `anon` key in Phase 2; go back and fix. `relation "companies" does not exist` → schema not applied; go back to Phase 3.
+
+#### Phase 7 — Intercom sync
+
+- **Goal:** push companies, contacts, and events to Intercom in the right order.
+- **Claude:** run, in order: `npm run setup:intercom`, `npm run sync:intercom`, `npm run sync:events`. The third script asks for `y/n` confirmation interactively because the events are not deletable via the Intercom API — stop and surface the prompt to the user before answering. Do not pipe `yes` to it.
+- **Verify:** each script's "Synced N/N" line shows full success. Ask the user to glance at Intercom and confirm the demo companies and contacts are visible.
+- **Failure recovery:** 401 → token or scopes wrong (Phase 4). `Resource Not Found` against `api.intercom.io` → region mismatch (Phase 4). Rate-limit 429 → wait for the reset timestamp and retry only the failed batch.
+
+#### Phase 8 — Dev server and smoke test
+
+- **Goal:** prove the whole stack is working.
+- **Claude:** start `npm run dev` with `run_in_background: true` and tail the output until you see "Ready" / "Local:". Pull one company UUID via a `tsx -e` snippet (`select id from companies limit 1`). Run the smoke-test `curl` against `/api/intercom/subscriptions?company_id=<uuid>` using the key from `.env.local`, but build the header inside a shell variable rather than in the visible command.
+- **You:** open `http://localhost:3000` and confirm the dashboard shows 5 companies, ~30 contacts, a non-zero MRR, and a Recent activity feed.
+- **Verify:** curl returns 200 with a `subscription` object containing `plan_tier`, `status`, `billing_cycle`, `renewal_date`. Dashboard renders without errors.
+- **Failure recovery:** 401 → header malformed (whitespace, wrong scheme); rebuild the curl. 404 → wrong UUID. Dashboard 500 → check server logs for a Supabase error and trace back to which env var is wrong.
+
+### Guardrails for Claude
+
+- Treat `.env.local` as write-only after Phase 5. Reading it for verification with `grep -c` or `grep -E` is fine; printing its contents is not.
+- Do not run `npm run cleanup:intercom`, `npm run reset`, `git push`, `vercel deploy`, or any equivalent without an explicit instruction in this session. The user's kickoff prompt does not authorise these.
+- Don't guess the Intercom region — ask in Phase 4. Defaulting to US silently breaks Phase 7 in a way that's hard to diagnose.
+- Don't skip the `/me` check in Phase 4 even if the token "looks right". A wrong token here causes failures three phases later.
+- Don't auto-confirm `npm run sync:events`. The events are not API-deletable.
+- If a phase fails, mark it back to `in_progress`, leave the next phases as `pending`, and stop. Don't roll forward past a broken phase.
+
+### Quick checklist (for the human)
+
+When Claude pauses for input, you'll need:
+
+- [ ] Supabase Project URL (Phase 2)
+- [ ] Supabase service_role key (Phase 2)
+- [ ] Choice of schema option A or B (Phase 3)
+- [ ] Confirmation that tables exist in Table Editor (Phase 3, if Option A)
+- [ ] Intercom access token + region (Phase 4)
+- [ ] Confirmation to run `npm run sync:events` (Phase 7)
+- [ ] Visual confirmation the dashboard rendered (Phase 8)
+
+Everything else Claude does for you.
+
+## Manual setup
+
+If you'd rather not use Claude Code, the next sections walk through the same steps by hand.
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/conorpendergrast/wobbleboard.git
@@ -29,7 +137,7 @@ cd wobbleboard
 npm install
 ```
 
-## 2. Create a Supabase project
+### 2. Create a Supabase project
 
 1. Go to <https://supabase.com/dashboard> and click **New project**. Pick any name and region; the free tier is fine.
 2. Wait for provisioning to finish (~2 minutes).
@@ -56,7 +164,7 @@ npx supabase link --project-ref <your-project-ref>   # the 20-char ID in your da
 npx supabase db push
 ```
 
-## 3. Create an Intercom developer app and access token
+### 3. Create an Intercom developer app and access token
 
 `INTERCOM_ACCESS_TOKEN` is a server-side token that lets the sync scripts and (future) API code call Intercom. Get it like this:
 
@@ -73,7 +181,7 @@ npx supabase db push
 - EU: `https://api.eu.intercom.io`
 - AU: `https://api.au.intercom.io`
 
-## 4. Generate your connector API key
+### 4. Generate your connector API key
 
 `INTERCOM_CONNECTOR_API_KEY` is **not** issued by Intercom — it's a secret you generate and share with any external system that calls the `/api/intercom/*` endpoints (e.g. Intercom's Data Connector). Generate one with:
 
@@ -83,7 +191,7 @@ openssl rand -hex 32
 
 Save the output. You'll paste it into `.env.local` next.
 
-## 5. Configure environment variables
+### 5. Configure environment variables
 
 Copy the template and fill in the four values you collected above:
 
@@ -102,7 +210,7 @@ INTERCOM_CONNECTOR_API_KEY=<the openssl output from step 4>
 
 `.env.local` is gitignored — never commit it. All four variables are required; missing any of them will cause the dev server or scripts to fail with a non-null-assertion error at startup.
 
-## 6. Seed the database with demo data
+### 6. Seed the database with demo data
 
 ```bash
 npm run seed
@@ -110,7 +218,7 @@ npm run seed
 
 You should see five companies, ~30 contacts, and ~100 product events inserted. If this fails with an auth error, your `SUPABASE_SERVICE_ROLE_KEY` is wrong (you may have copied the `anon` key by mistake).
 
-## 7. Set up Intercom custom attributes and sync
+### 7. Set up Intercom custom attributes and sync
 
 Run these in order — `setup:intercom` must finish before any `sync:*` script, because the sync writes into custom attributes that don't exist yet.
 
@@ -130,7 +238,7 @@ npm run cleanup:intercom
 
 > Note: Intercom's API does not support deleting companies. The cleanup script will warn for any companies that need to be removed manually from the Intercom dashboard.
 
-## 8. Start the dev server
+### 8. Start the dev server
 
 ```bash
 npm run dev
