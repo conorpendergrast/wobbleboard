@@ -1,4 +1,20 @@
-const INTERCOM_BASE_URL = "https://api.intercom.io";
+const REGION_BASE_URLS: Record<string, string> = {
+  us: "https://api.intercom.io",
+  eu: "https://api.eu.intercom.io",
+  au: "https://api.au.intercom.io",
+};
+
+function getBaseUrl(): string {
+  const raw = process.env.INTERCOM_REGION ?? "us";
+  const region = raw.toLowerCase();
+  const url = REGION_BASE_URLS[region];
+  if (!url) {
+    throw new Error(
+      `INTERCOM_REGION must be one of: us, eu, au (got: ${raw})`
+    );
+  }
+  return url;
+}
 
 function getToken(): string {
   const token = process.env.INTERCOM_ACCESS_TOKEN;
@@ -11,7 +27,7 @@ export async function intercomRequest<T = unknown>(
   path: string,
   body?: Record<string, unknown>
 ): Promise<T> {
-  const url = `${INTERCOM_BASE_URL}${path}`;
+  const url = `${getBaseUrl()}${path}`;
   const res = await fetch(url, {
     method,
     headers: {
