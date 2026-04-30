@@ -52,14 +52,14 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
 **Architecture:** Supabase-first writes — API mutates Supabase, then pushes attribute updates to Intercom. Supabase remains source of truth.
 
 ### 3d.1 — Supabase mutation layer
-- [ ] `POST /api/intercom/subscriptions` endpoint
-- [ ] Accepts: `company_id` (UUID), `action` (`change_plan` | `cancel`), `new_plan_tier` (optional, required when action is `change_plan`)
-- [ ] Updates Supabase `subscriptions` table first
-- [ ] Pushes updated company attributes to Intercom (`plan_tier`, `subscription_status`)
-- [ ] Bearer token auth (reuse `src/lib/api-auth.ts`)
-- [ ] Validation: reject invalid plan tiers, reject cancel-on-already-cancelled, reject unknown company UUIDs
-- [ ] Returns structured success/error response Fin can render to the customer
-- [ ] Tests: success cases, validation failures, auth failures, Intercom sync failure handling
+- [x] `POST /api/intercom/subscriptions` endpoint
+- [x] Accepts: `company_id` (UUID), `action` (`change_plan` | `cancel`), `new_plan_tier` (optional, required when action is `change_plan`)
+- [x] Updates Supabase `subscriptions` table first
+- [x] Pushes updated company attributes to Intercom (`plan_tier`, `subscription_status`)
+- [x] Bearer token auth (reuse `src/lib/api-auth.ts`)
+- [x] Validation: reject invalid plan tiers, reject cancel-on-already-cancelled, reject unknown company UUIDs
+- [x] Returns structured success/error response Fin can render to the customer
+- [x] Tests: success cases, validation failures, auth failures, Intercom sync failure handling
 
 ### 3d.2 — Intercom Data Connector configuration
 - [ ] Configure POST connector in Intercom UI
