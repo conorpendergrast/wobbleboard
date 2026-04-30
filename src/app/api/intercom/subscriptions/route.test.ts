@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
 
 vi.mock('@/lib/intercom', () => ({
   intercomRequest: vi.fn(),
@@ -9,7 +9,7 @@ vi.mock('@/lib/supabase', () => ({
   createServiceClient: vi.fn(),
 }));
 
-import { POST } from './route';
+import { GET, POST } from './route';
 import { intercomRequest } from '@/lib/intercom';
 import { createServiceClient } from '@/lib/supabase';
 
@@ -26,6 +26,15 @@ beforeEach(() => {
 // ─── Test helpers ──────────────────────────────────────────────────────────
 
 const VALID_UUID = '11111111-2222-3333-4444-555555555555';
+
+function makeGetRequest(companyId: string | null, authHeader: string | null = `Bearer ${API_KEY}`): NextRequest {
+  const url = companyId
+    ? `http://test/api/intercom/subscriptions?company_id=${companyId}`
+    : 'http://test/api/intercom/subscriptions';
+  const headers = new Headers();
+  if (authHeader !== null) headers.set('authorization', authHeader);
+  return new NextRequest(url, { method: 'GET', headers });
+}
 
 function makeRequest(opts: {
   body?: unknown;
@@ -47,13 +56,11 @@ function makeRequest(opts: {
         ? JSON.stringify(opts.body)
         : undefined;
 
-  // NextRequest is a thin wrapper over Request; the route only reads
-  // headers and `.json()`, so a plain Request typed as NextRequest is enough.
-  return new Request('http://test/api/intercom/subscriptions', {
+  return new NextRequest('http://test/api/intercom/subscriptions', {
     method: 'POST',
     headers,
     body,
-  }) as unknown as NextRequest;
+  });
 }
 
 type Existing = {
@@ -115,6 +122,43 @@ const ACTIVE_GROWTH: Existing = {
 };
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
+
+describe('GET /api/intercom/subscriptions (smoke)', () => {
+  // Lightweight coverage to lock in the existing GET behaviour while the
+  // POST work is touching shared helpers (`extractCompanyName`).
+  it('returns 401 without bearer auth', async () => {
+    mockSupabase({});
+    const res = await GET(makeGetRequest(VALID_UUID, null));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 without company_id', async () => {
+    mockSupabase({});
+    const res = await GET(makeGetRequest(null));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when no subscription exists', async () => {
+    mockSupabase({ existing: null, readError: { message: 'no rows' } });
+    const res = await GET(makeGetRequest(VALID_UUID));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns subscription with company_name on success', async () => {
+    mockSupabase({ existing: ACTIVE_GROWTH });
+    const res = await GET(makeGetRequest(VALID_UUID));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      company_name: 'Acme',
+      subscription: {
+        plan_tier: 'growth',
+        status: 'active',
+        billing_cycle: 'monthly',
+        renewal_date: '2026-05-12',
+      },
+    });
+  });
+});
 
 describe('POST /api/intercom/subscriptions', () => {
   describe('auth', () => {
@@ -361,7 +405,7 @@ describe('POST /api/intercom/subscriptions', () => {
       expect(intercomRequest).not.toHaveBeenCalled();
     });
 
-    it('returns 409 when status-guarded UPDATE matches zero rows (concurrent mutation)', async () => {
+    it('returns 409 when status-guarded UPDATE returns PGRST116 (concurrent mutation)', async () => {
       const supa = mockSupabase({
         existing: ACTIVE_GROWTH,
         updateError: { code: 'PGRST116', message: 'no rows' },
@@ -376,6 +420,25 @@ describe('POST /api/intercom/subscriptions', () => {
         error: 'Subscription state changed concurrently; please retry',
       });
       expect(supa.update).toHaveBeenCalled();
+      expect(supa.neq).toHaveBeenCalledWith('status', 'churned');
+      expect(intercomRequest).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when status-guarded UPDATE returns null data without error', async () => {
+      // supabase-js sometimes signals zero-row UPDATE as { data: null, error: null }
+      // rather than PGRST116. We must not crash on `updated.plan_tier`.
+      mockSupabase({
+        existing: ACTIVE_GROWTH,
+        updated: null,
+        updateError: null,
+      });
+      const res = await POST(
+        makeRequest({ body: { company_id: VALID_UUID, action: 'cancel' } })
+      );
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: 'Subscription state changed concurrently; please retry',
+      });
       expect(intercomRequest).not.toHaveBeenCalled();
     });
   });
@@ -395,7 +458,7 @@ describe('POST /api/intercom/subscriptions', () => {
     });
 
     it('returns 200 partial-success when Intercom push fails after Supabase write', async () => {
-      mockSupabase({
+      const supa = mockSupabase({
         existing: ACTIVE_GROWTH,
         updated: {
           plan_tier: 'growth',
@@ -421,8 +484,10 @@ describe('POST /api/intercom/subscriptions', () => {
         message: 'Subscription cancelled. Update will appear in Intercom shortly.',
       });
 
-      // Verify Supabase is NOT rolled back: only one call to from('subscriptions')
-      // worth of writes (the original .update). intercomRequest fired exactly once.
+      // No rollback: exactly one .update() call, and the from() table accessor
+      // was hit only twice (one SELECT + one UPDATE — no compensating write).
+      expect(supa.update).toHaveBeenCalledTimes(1);
+      expect(supa.from).toHaveBeenCalledTimes(2);
       expect(intercomRequest).toHaveBeenCalledTimes(1);
     });
   });

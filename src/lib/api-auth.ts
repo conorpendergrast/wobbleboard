@@ -4,8 +4,8 @@ export function validateApiKey(request: NextRequest): {
   valid: boolean;
   response?: NextResponse;
 } {
-  // Read on each call rather than at module load, so deploys that rotate
-  // INTERCOM_CONNECTOR_API_KEY pick up the new value without a cold start.
+  // Read on each call so tests can override, and so an empty/unset env var
+  // is treated as "no key configured" → 401 rather than silently matching.
   const apiKey = process.env.INTERCOM_CONNECTOR_API_KEY;
   const authHeader = request.headers.get('authorization');
 

@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const patch: Record<string, string> =
+  const patch: { plan_tier?: PlanTier; status?: 'churned' } =
     action === 'change_plan'
       ? { plan_tier: new_plan_tier! }
       : { status: 'churned' };
@@ -146,13 +146,20 @@ export async function POST(request: NextRequest) {
     .select('plan_tier, status, billing_cycle, renewal_date')
     .single();
 
-  if (updateErr) {
-    if ((updateErr as { code?: string }).code === 'PGRST116') {
-      return NextResponse.json(
-        { error: 'Subscription state changed concurrently; please retry' },
-        { status: 409 }
-      );
-    }
+  // Zero-row UPDATE surfaces in two ways depending on supabase-js / PostgREST
+  // version: either as a PGRST116 "no rows" error from `.single()`, or as
+  // `data: null, error: null` (no error, but nothing to coerce). Treat both
+  // as a 409 so we don't crash on the !updated path below.
+  if (
+    (updateErr && (updateErr as { code?: string }).code === 'PGRST116') ||
+    (!updateErr && !updated)
+  ) {
+    return NextResponse.json(
+      { error: 'Subscription state changed concurrently; please retry' },
+      { status: 409 }
+    );
+  }
+  if (updateErr || !updated) {
     console.error('Failed to update subscription:', updateErr);
     return NextResponse.json(
       { error: 'Failed to update subscription' },
@@ -262,19 +269,27 @@ async function pushToIntercomWithTimeout(
   planTier: string,
   status: string
 ): Promise<void> {
-  await Promise.race([
-    intercomRequest('POST', '/companies', {
-      company_id: companyId,
-      custom_attributes: {
-        plan_tier: planTier,
-        subscription_status: status,
-      },
-    }),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Intercom push timed out after ${INTERCOM_PUSH_TIMEOUT_MS}ms`)),
-        INTERCOM_PUSH_TIMEOUT_MS
-      )
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Intercom push timed out after ${INTERCOM_PUSH_TIMEOUT_MS}ms`)),
+      INTERCOM_PUSH_TIMEOUT_MS
+    );
+  });
+  try {
+    await Promise.race([
+      intercomRequest('POST', '/companies', {
+        company_id: companyId,
+        custom_attributes: {
+          plan_tier: planTier,
+          subscription_status: status,
+        },
+      }),
+      timeout,
+    ]);
+  } finally {
+    // Always clear so a fast happy-path doesn't keep the serverless function
+    // billable until the timer fires.
+    if (timer) clearTimeout(timer);
+  }
 }

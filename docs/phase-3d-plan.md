@@ -244,7 +244,7 @@ Cases — every one in the brief, plus a few drawn from the contract:
 6. **Missing/invalid bearer token** → 401, no DB or Intercom calls.
 7. **Missing `action`** → 400.
 8. **`change_plan` without `new_plan_tier`** → 400.
-9. **No-op `change_plan` (same tier)** → 409.
+9. **No-op `change_plan` (same tier)** → 200 idempotent, no writes.
 10. **Malformed JSON body** → 400 "Invalid JSON body".
 11. **Non-UUID `company_id`** → 400.
 12. **Intercom push fails after Supabase succeeds** — Supabase write completes,
