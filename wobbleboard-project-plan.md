@@ -61,15 +61,13 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
   Worth one entry in `docs/intercom-api-gotchas.md` under
   "Surprises that aren't bugs".
 
-### 3d.3 Fin wiring + demo script + e2e tests ⬅ NEXT
-- [ ] Wire Fin to call the POST connector autonomously on plan-change
+### 3d.3 Fin wiring + demo script + e2e tests ✅
+Fin procedure configured in Intercom UI 2026-05-01, tested and live.
+- [x] Wire Fin to call the POST connector autonomously on plan-change
       and cancel intents
-- [ ] Cancellation-confirmation guardrail (Fin must confirm before posting)
-- [ ] Rehearsed demo script
-- [ ] E2E test pass against the live workspace
-- **Now unblocked:** 3d.4a (honest cleanup) and 3d.4b (no-orphan reseeds)
-  have landed, so demos no longer run against a workspace that lies
-  about cleanup state or accumulates zombie records on every reseed.
+- [x] Cancellation-confirmation guardrail (Fin must confirm before posting)
+- [x] Rehearsed demo script
+- [x] E2E test pass against the live workspace
 
 ### 3d.4a Fix cleanup:intercom silent failure ✅
 PR #10 merged.
@@ -97,19 +95,16 @@ separately as 3d.4b.1.
       *(ran 2 cycles, not 3 — same 5 Intercom IDs both times, 30/30
       contacts updated in place; close enough)*
 
-### 3d.4b.1 Per-company tenure ladder for remote_created_at 📋
-PR #12 open. Branch: `phase-3d-4b-tenure-ladder`.
-- [ ] Restore per-company deterministic `remote_created_at` values
+### 3d.4b.1 Per-company tenure ladder for remote_created_at ✅
+PR #12 merged.
+- [x] Restore per-company deterministic `remote_created_at` values
       (fixed ISO dates, anchored to a stable past date — not relative
       `daysAgo()` that creeps forward)
-- [ ] Tests asserting distinct values per company + stable across
+- [x] Tests asserting distinct values per company + stable across
       reseeds + ordering invariant locking the
       Brightpath > Pennine > GreenLeaf > Mosaic > Fern & Oak ladder
-- **Why:** PR #11 unified all 5 companies on one `created_at`, which
-  flattened the demo's customer-tenure variation. This follow-up
-  restores it without reintroducing reseed drift.
 
-### 3d.4c reset:full command 📋
+### 3d.4c reset:full command ⬅ NEXT
 - [ ] Build on top of 3d.4a (honest cleanup) + 3d.4b (no orphans by design)
 - [ ] Detach contacts from companies before deleting contacts
 - [ ] Retry-with-backoff for search-index propagation lag (up to 60s)
