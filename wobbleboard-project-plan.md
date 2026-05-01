@@ -67,7 +67,7 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
 - [ ] Cancellation-confirmation guardrail (Fin must confirm before posting)
 - [ ] Rehearsed demo script
 - [ ] E2E test pass against the live workspace
-ked by 3d.4a** — must not demo against a workspace that lies
+- **Blocked by 3d.4a** — must not demo against a workspace that lies
   about cleanup state.
 
 ### 3d.4a Fix cleanup:intercom silent failure ⬅ NEXT
@@ -88,7 +88,7 @@ ked by 3d.4a** — must not demo against a workspace that lies
 - [ ] Switch contact emails to deterministic
       (`role-N@domain.wobbleboard.example`)
 - [ ] Verify Intercom `company_id`-based upsert actually updates in place
-- [ ] he existing 409 contact handler kicks in on email collision
+- [ ] Verify the existing 409 contact handler kicks in on email collision
 - [ ] Test: 3 back-to-back reseed cycles → zero orphan growth in Intercom
 
 ### 3d.4c reset:full command 📋
@@ -107,7 +107,7 @@ ked by 3d.4a** — must not demo against a workspace that lies
 - [ ] Add entry: search-index propagation lag (60+ seconds)
 - [ ] Add entry: Surprises — direct POST works cleanly in 2026
 - **Consulting use:** these four findings are the spine of the
-  "5 mistakes" Bento ce.
+  "5 mistakes" Bento email
 
 ## Phase 3e: Frontend Edit Functionality 📋
 - [ ] Edit company/contact data from the frontend
