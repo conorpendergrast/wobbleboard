@@ -117,16 +117,27 @@ PR #12 merged.
       (per CLAUDE.md hard rule)
 
 ### 3d.4d Intercom API gotchas doc 📋
-- [ ] Rename `docs/phase-3d-intercom-post-bugs.md` →
+Interim stub landed via the docs/handoff-readiness-fixes branch
+(PR #14): `docs/intercom-api-gotchas.md` now contains a one-paragraph
+intro plus brief findings for all four entries below. The bug-capture
+template that previously occupied this filename is preserved at
+`docs/archive/intercom-api-gotchas-template.md`. Full version with
+reproduction steps, examples, and additional findings is still owed.
+- [x] Rename `docs/phase-3d-intercom-post-bugs.md` →
       `docs/intercom-api-gotchas.md`
-- [ ] Add entry: `DELETE /companies/{id}` archives rather than
+- [x] Stub entry: `DELETE /companies/{id}` archives rather than
       hard-deletes (documented soft-delete behaviour)
-- [ ] Add entry: `GET /companies` LIST excludes companies with
+- [x] Stub entry: `GET /companies` LIST excludes companies with
       `user_count == 0` or null `remote_created_at` (documented
       visibility filter)
-- [ ] Add entry: search-index propagation lag of 60+ seconds after
+- [x] Stub entry: search-index propagation lag of 60+ seconds after
       writes
-- [ ] Add entry: Surprises — direct POST works cleanly in 2026
+- [x] Stub entry: Surprises — direct POST works cleanly in 2026
+- [ ] Expand each stub entry with reproduction steps and example
+      payloads
+- [ ] Add load-bearing "why direct POST, not proxy" architectural note
+      (gap-9 from handoff audit)
+- [ ] Add one-way sync invariant note (gap-11)
 - **Consulting use:** these four findings are the spine of the
   "5 mistakes" Bento email sequence.
 
@@ -156,6 +167,11 @@ PR #12 merged.
 - [ ] End-to-end demo walkthrough test
 - [ ] README with setup instructions (for future reference)
 - [ ] Consider: custom domain (e.g. demo.wobbleboard.example)
+- [x] `docs/archive/` established (PR #14) for working notes kept for
+      provenance — `phase-3d-blockers.md`,
+      `phase-3d-overnight-status.md`, `phase-3d-plan.md`, and the
+      bug-capture template. New historical notes go here, not in
+      `docs/` root.
 
 ## Standing rule: pre-demo reset
 
