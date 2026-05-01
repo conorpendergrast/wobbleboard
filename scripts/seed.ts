@@ -50,10 +50,16 @@ function daysAgo(n: number): string {
 
 // ─── Company seed data ─────────────────────────────────────────────
 //
-// `created_at` is a single fixed date so Intercom's `remote_created_at`
-// (set by sync-to-intercom.ts) is identical and stable across reseeds.
-
-const COMPANY_CREATED_AT = "2024-01-01T00:00:00.000Z";
+// Each company's `created_at` is a fixed ISO date — chosen to recreate
+// the original tenure ladder (540 / 400 / 300 / 200 / 120 days, longest
+// to shortest) anchored at 2026-05-01 so the demo dashboard shows
+// believable per-company customer-tenure variation. Anchored to a fixed
+// date rather than computed via "N days ago" so the values are stable
+// across reseeds rather than creeping forward over time.
+//
+// sync-to-intercom.ts converts each value to a Unix timestamp and sends
+// it as Intercom's `remote_created_at`, which Intercom requires to be
+// non-null and in the past for a company to appear in the dashboard.
 
 export interface CompanySeed {
   name: string;
@@ -74,7 +80,7 @@ export const COMPANIES: CompanySeed[] = [
     industry: "logistics",
     employee_count: 1200,
     mrr: 249900,
-    created_at: COMPANY_CREATED_AT,
+    created_at: "2024-11-07T00:00:00.000Z", // ~540 days before anchor (longest tenure)
     domain: "brightpath.wobbleboard.example",
     plan_tier: "enterprise",
     status: "active",
@@ -86,7 +92,7 @@ export const COMPANIES: CompanySeed[] = [
     industry: "creative_agency",
     employee_count: 28,
     mrr: 4900,
-    created_at: COMPANY_CREATED_AT,
+    created_at: "2026-01-01T00:00:00.000Z", // ~120 days before anchor (newest, on trial)
     domain: "fernandoak.wobbleboard.example",
     plan_tier: "starter",
     status: "trial",
@@ -98,7 +104,7 @@ export const COMPANIES: CompanySeed[] = [
     industry: "financial_services",
     employee_count: 450,
     mrr: 89900,
-    created_at: COMPANY_CREATED_AT,
+    created_at: "2025-03-27T00:00:00.000Z", // ~400 days before anchor
     domain: "pennine.wobbleboard.example",
     plan_tier: "growth",
     status: "active",
@@ -110,7 +116,7 @@ export const COMPANIES: CompanySeed[] = [
     industry: "healthcare",
     employee_count: 800,
     mrr: 149900,
-    created_at: COMPANY_CREATED_AT,
+    created_at: "2025-07-05T00:00:00.000Z", // ~300 days before anchor
     domain: "greenleaf.wobbleboard.example",
     plan_tier: "enterprise",
     status: "past_due",
@@ -122,7 +128,7 @@ export const COMPANIES: CompanySeed[] = [
     industry: "education",
     employee_count: 65,
     mrr: 0,
-    created_at: COMPANY_CREATED_AT,
+    created_at: "2025-10-13T00:00:00.000Z", // ~200 days before anchor
     domain: "mosaic.wobbleboard.example",
     plan_tier: "starter",
     status: "churned",
