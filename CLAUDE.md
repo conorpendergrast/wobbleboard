@@ -43,6 +43,7 @@ These apply to every session, not just setup:
   - `vercel deploy`, `vercel --prod`, or any other deploy command
 - **Do not auto-confirm `npm run sync:events`.** The script asks `y/n` because Intercom events are not deletable via API. Surface the prompt to the user. Do not pipe `yes` into it.
 - **Do not guess the Intercom region.** Ask the user (US/EU/AU) and set `INTERCOM_REGION` in `.env.local`. The Intercom client (`src/lib/intercom.ts`) reads this env var; do not edit the source to change region.
+- **The plan and the code ship together.** Any PR that completes a numbered phase or sub-phase must update `wobbleboard-project-plan.md` in the same branch — tick the boxes, change the heading marker (📋 → ✅), add the merged PR number to the phase note, and move the `⬅ NEXT` arrow to whatever's actually next. Don't leave the plan to drift while branches merge.
 
 ## Codebase conventions
 
