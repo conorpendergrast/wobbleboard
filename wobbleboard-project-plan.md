@@ -43,6 +43,10 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
 - [x] Auth helper extracted to shared `src/lib/api-auth.ts`
 - [x] All 9 tests passing (auth, 404s, 400s, valid responses)
 - [ ] **TODO: Configure 2 new Data Connectors in Intercom + test with Fin**
+      *(2026-05-01: awaiting confirmation — were both contact-activity
+      and company-engagement connectors wired up alongside the Fin
+      procedure work? Tick this once both are live and tested; if only
+      one was done, replace with a note naming the pending one.)*
 
 ## Phase 3d: Write-capable Data Connectors
 
@@ -115,12 +119,16 @@ PR #12 merged.
 ### 3d.4d Intercom API gotchas doc 📋
 - [ ] Rename `docs/phase-3d-intercom-post-bugs.md` →
       `docs/intercom-api-gotchas.md`
-- [ ] Add entry: `DELETE /companies/{id}` returns 200, doesn't delete
-- [ ] Add entry: `GET /companies` LIST endpoint desynced from direct GET
-- [ ] Add entry: search-index propagation lag (60+ seconds)
+- [ ] Add entry: `DELETE /companies/{id}` archives rather than
+      hard-deletes (documented soft-delete behaviour)
+- [ ] Add entry: `GET /companies` LIST excludes companies with
+      `user_count == 0` or null `remote_created_at` (documented
+      visibility filter)
+- [ ] Add entry: search-index propagation lag of 60+ seconds after
+      writes
 - [ ] Add entry: Surprises — direct POST works cleanly in 2026
 - **Consulting use:** these four findings are the spine of the
-  "5 mistakes" Bento email
+  "5 mistakes" Bento email sequence.
 
 ## Phase 3e: Frontend Edit Functionality 📋
 - [ ] Edit company/contact data from the frontend
@@ -143,18 +151,24 @@ PR #12 merged.
   done it's done.
 
 ## Phase 4: Polish & Demo Readiness 📋
-- [ ] Merge all branches to main
+- [ ] Final repository tidy (prune merged branches, archive any
+      abandoned ones)
 - [ ] End-to-end demo walkthrough test
 - [ ] README with setup instructions (for future reference)
 - [ ] Consider: custom domain (e.g. demo.wobbleboard.example)
 
 ## Standing rule: pre-demo reset
-After 3d.4a, 3d.4b, and 3d.4c land:
+
+Reseed produces stable Intercom records via deterministic UUIDs and
+upsert (3d.4b). Standard pre-demo reset:
+
 ```
-npm run reset:full        # idempotent, honest about what it can't clean
+npm run reset && npm run seed && npm run sync:intercom
 ```
-Until then, manual UI cleanup of demo companies is required between
-significant demo cycles. See `docs/intercom-api-gotchas.md`.
+
+This is idempotent — same five companies, same thirty contacts, same
+Intercom IDs every time. No orphan accumulation. After 3d.4c lands,
+this becomes `npm run reset:full` with retries and event-skip default.
 
 ---
 
@@ -179,7 +193,7 @@ significant demo cycles. See `docs/intercom-api-gotchas.md`.
 
 ## Key Constraints
 - **Live Intercom workspace** — all demo data tagged with `is_demo` / `is_demo_company` for safe cleanup
-- **Intercom Data Connector POST bugs** — Phase 3d will validate the direct-POST path and document every failure mode encountered. Cloudflare Worker proxy is the fallback if direct POST is unworkable.
+- **Intercom Data Connector POST behaviour** — Phase 3d.2 verified that direct POST to a third-party API works cleanly in 2026. No proxy layer needed. The historical bugs (URL mangling, JSON double-encoding, default Content-Type issues) did not reproduce.
 - **Events are immutable** — cannot be deleted from Intercom once synced
 - **Custom attribute names must be unique across models** — hence `is_demo` (contacts) vs `is_demo_company` (companies)
 - **Fin executing irreversible actions** — cancellation flow includes a confirmation step before execution. This models best practice for consulting clients rather than maximum demo flash.
