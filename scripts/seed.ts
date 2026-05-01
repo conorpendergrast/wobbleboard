@@ -1,22 +1,38 @@
 import { createClient } from "@supabase/supabase-js";
+import { v5 as uuidv5 } from "uuid";
 import * as dotenv from "dotenv";
 import { resolve } from "path";
 
-dotenv.config({ path: resolve(__dirname, "../.env.local") });
+// ─── Determinism: stable IDs across reseeds ────────────────────────
+//
+// Company UUIDs are derived deterministically from the company name via
+// UUIDv5; contact UUIDs from the contact email. This means re-running
+// `npm run seed` against a clean database produces the same UUIDs every
+// time, and `sync:intercom` finds and updates the existing Intercom
+// records via the `company_id` upsert key (POST /companies) and the
+// email-based 409-handler (POST /contacts).
+//
+// Without this, gen_random_uuid() + random contact emails caused every
+// reseed to create fresh Intercom orphans (see
+// docs/phase-3d-4-reseed-audit.md). Plus Intercom soft-deletes companies,
+// so every reseed left more zombie records behind. This file is the
+// canonical fix for that.
+//
+// Changing SEED_NAMESPACE invalidates every existing demo-state mapping —
+// every reseed in every environment will produce a brand-new set of
+// Intercom records. Don't change it without a deliberate plan.
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const SEED_NAMESPACE = "7c1e9e2c-2b3f-4f8a-9b5e-1d4f5e6c7a8b";
 
-// ─── Helpers ───────────────────────────────────────────────
-
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString();
+export function companyId(name: string): string {
+  return uuidv5(name, SEED_NAMESPACE);
 }
+
+export function contactId(email: string): string {
+  return uuidv5(email, SEED_NAMESPACE);
+}
+
+// ─── Helpers (random, used for events only) ───────────────────────
 
 function randomBetween(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -26,129 +42,162 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20);
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString();
 }
 
-// ─── Company data ──────────────────────────────────────────
+// ─── Company seed data ─────────────────────────────────────────────
+//
+// `created_at` is a single fixed date so Intercom's `remote_created_at`
+// (set by sync-to-intercom.ts) is identical and stable across reseeds.
 
-const companies = [
+const COMPANY_CREATED_AT = "2024-01-01T00:00:00.000Z";
+
+export interface CompanySeed {
+  name: string;
+  industry: string;
+  employee_count: number;
+  mrr: number;
+  created_at: string;
+  domain: string;
+  plan_tier: "starter" | "growth" | "enterprise";
+  status: "active" | "trial" | "past_due" | "churned";
+  billing_cycle: "monthly" | "annual";
+  renewal_date: string | null;
+}
+
+export const COMPANIES: CompanySeed[] = [
   {
     name: "Brightpath Logistics",
     industry: "logistics",
     employee_count: 1200,
-    mrr: 249900, // £2,499/mo
-    created_at: daysAgo(540),
+    mrr: 249900,
+    created_at: COMPANY_CREATED_AT,
     domain: "brightpath.wobbleboard.example",
-    plan_tier: "enterprise" as const,
-    status: "active" as const,
-    billing_cycle: "annual" as const,
+    plan_tier: "enterprise",
+    status: "active",
+    billing_cycle: "annual",
+    renewal_date: "2026-12-31",
   },
   {
     name: "Fern & Oak Design Studio",
     industry: "creative_agency",
     employee_count: 28,
-    mrr: 4900, // £49/mo
-    created_at: daysAgo(120),
+    mrr: 4900,
+    created_at: COMPANY_CREATED_AT,
     domain: "fernandoak.wobbleboard.example",
-    plan_tier: "starter" as const,
-    status: "trial" as const,
-    billing_cycle: "monthly" as const,
+    plan_tier: "starter",
+    status: "trial",
+    billing_cycle: "monthly",
+    renewal_date: "2026-08-15",
   },
   {
     name: "Pennine Financial Services",
     industry: "financial_services",
     employee_count: 450,
-    mrr: 89900, // £899/mo
-    created_at: daysAgo(400),
+    mrr: 89900,
+    created_at: COMPANY_CREATED_AT,
     domain: "pennine.wobbleboard.example",
-    plan_tier: "growth" as const,
-    status: "active" as const,
-    billing_cycle: "annual" as const,
+    plan_tier: "growth",
+    status: "active",
+    billing_cycle: "annual",
+    renewal_date: "2027-03-01",
   },
   {
     name: "GreenLeaf Healthcare",
     industry: "healthcare",
     employee_count: 800,
-    mrr: 149900, // £1,499/mo
-    created_at: daysAgo(300),
+    mrr: 149900,
+    created_at: COMPANY_CREATED_AT,
     domain: "greenleaf.wobbleboard.example",
-    plan_tier: "enterprise" as const,
-    status: "past_due" as const,
-    billing_cycle: "monthly" as const,
+    plan_tier: "enterprise",
+    status: "past_due",
+    billing_cycle: "monthly",
+    renewal_date: "2026-09-15",
   },
   {
     name: "Mosaic Education Trust",
     industry: "education",
     employee_count: 65,
     mrr: 0,
-    created_at: daysAgo(200),
+    created_at: COMPANY_CREATED_AT,
     domain: "mosaic.wobbleboard.example",
-    plan_tier: "starter" as const,
-    status: "churned" as const,
-    billing_cycle: "monthly" as const,
+    plan_tier: "starter",
+    status: "churned",
+    billing_cycle: "monthly",
+    renewal_date: null,
   },
 ];
 
-// ─── Contact data ──────────────────────────────────────────
+// ─── Contact seed data ─────────────────────────────────────────────
+//
+// Snapshot extracted from the live demo state on 2026-05-01: the
+// canonical 30 demo contacts. Names, emails, roles, and company
+// assignments are now hard-coded so reseeds produce identical contact
+// records. UUIDs are derived from email via UUIDv5 (see contactId()),
+// so the email-based 409-handler in sync-to-intercom.ts will fire on
+// reseed and update the existing Intercom contact in place.
 
-// British first/last names
-const firstNames = [
-  "James", "Charlotte", "Oliver", "Amelia", "George", "Isla", "Harry",
-  "Emily", "Jack", "Poppy", "Thomas", "Sophia", "William", "Freya",
-  "Henry", "Grace", "Edward", "Lily", "Samuel", "Mia", "Daniel",
-  "Ava", "Joseph", "Ella", "Benjamin", "Ruby", "Alexander", "Hannah",
-  "Matthew", "Chloe", "Priya", "Aisha",
+export interface ContactSeed {
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: "hr_admin" | "wellness_champion" | "employee";
+  company_name: string;
+  signed_up_at: string;
+  last_active_at: string;
+}
+
+export const CONTACTS: ContactSeed[] = [
+  // Brightpath Logistics (10)
+  { first_name: "Harry", last_name: "Ali", email: "harry.ali@brightpath.wobbleboard.example", role: "hr_admin", company_name: "Brightpath Logistics", signed_up_at: "2024-11-20T09:51:40.402Z", last_active_at: "2026-04-30T08:51:40.557Z" },
+  { first_name: "Priya", last_name: "Roberts", email: "priya.roberts@brightpath.wobbleboard.example", role: "hr_admin", company_name: "Brightpath Logistics", signed_up_at: "2024-12-30T09:51:40.402Z", last_active_at: "2026-04-25T08:51:40.557Z" },
+  { first_name: "Amelia", last_name: "Walsh", email: "amelia.walsh@brightpath.wobbleboard.example", role: "wellness_champion", company_name: "Brightpath Logistics", signed_up_at: "2024-11-30T09:51:40.402Z", last_active_at: "2026-04-25T08:51:40.557Z" },
+  { first_name: "Joseph", last_name: "Mitchell", email: "joseph.mitchell@brightpath.wobbleboard.example", role: "wellness_champion", company_name: "Brightpath Logistics", signed_up_at: "2024-11-15T09:51:40.402Z", last_active_at: "2026-04-24T08:51:40.557Z" },
+  { first_name: "Priya", last_name: "Wright", email: "priya.wright@brightpath.wobbleboard.example", role: "wellness_champion", company_name: "Brightpath Logistics", signed_up_at: "2024-11-29T09:51:40.402Z", last_active_at: "2026-04-29T08:51:40.557Z" },
+  { first_name: "Aisha", last_name: "Campbell", email: "aisha.campbell@brightpath.wobbleboard.example", role: "employee", company_name: "Brightpath Logistics", signed_up_at: "2024-11-20T09:51:40.402Z", last_active_at: "2026-04-24T08:51:40.557Z" },
+  { first_name: "Emily", last_name: "Gray", email: "emily.gray@brightpath.wobbleboard.example", role: "employee", company_name: "Brightpath Logistics", signed_up_at: "2024-12-01T09:51:40.402Z", last_active_at: "2026-04-28T08:51:40.557Z" },
+  { first_name: "James", last_name: "Khan", email: "james.khan@brightpath.wobbleboard.example", role: "employee", company_name: "Brightpath Logistics", signed_up_at: "2024-12-27T09:51:40.402Z", last_active_at: "2026-04-26T08:51:40.557Z" },
+  { first_name: "Oliver", last_name: "Foster", email: "oliver.foster@brightpath.wobbleboard.example", role: "employee", company_name: "Brightpath Logistics", signed_up_at: "2024-11-30T09:51:40.402Z", last_active_at: "2026-04-23T08:51:40.557Z" },
+  { first_name: "Poppy", last_name: "Turner", email: "poppy.turner@brightpath.wobbleboard.example", role: "employee", company_name: "Brightpath Logistics", signed_up_at: "2024-11-18T09:51:40.402Z", last_active_at: "2026-04-20T08:51:40.557Z" },
+
+  // Fern & Oak Design Studio (3)
+  { first_name: "Henry", last_name: "Patel", email: "henry.patel@fernandoak.wobbleboard.example", role: "hr_admin", company_name: "Fern & Oak Design Studio", signed_up_at: "2026-01-14T09:51:40.403Z", last_active_at: "2026-04-23T08:51:40.557Z" },
+  { first_name: "Hannah", last_name: "Khan", email: "hannah.khan@fernandoak.wobbleboard.example", role: "wellness_champion", company_name: "Fern & Oak Design Studio", signed_up_at: "2026-01-25T09:51:40.403Z", last_active_at: "2026-04-24T08:51:40.557Z" },
+  { first_name: "James", last_name: "Bennett", email: "james.bennett@fernandoak.wobbleboard.example", role: "employee", company_name: "Fern & Oak Design Studio", signed_up_at: "2026-01-08T09:51:40.403Z", last_active_at: "2026-05-01T08:51:40.557Z" },
+
+  // Pennine Financial Services (7)
+  { first_name: "Samuel", last_name: "Roberts", email: "samuel.roberts@pennine.wobbleboard.example", role: "hr_admin", company_name: "Pennine Financial Services", signed_up_at: "2025-05-08T08:51:40.403Z", last_active_at: "2026-04-24T08:51:40.557Z" },
+  { first_name: "Lily", last_name: "Campbell", email: "lily.campbell@pennine.wobbleboard.example", role: "wellness_champion", company_name: "Pennine Financial Services", signed_up_at: "2025-05-20T08:51:40.403Z", last_active_at: "2026-05-01T08:51:40.557Z" },
+  { first_name: "Thomas", last_name: "Walker", email: "thomas.walker@pennine.wobbleboard.example", role: "wellness_champion", company_name: "Pennine Financial Services", signed_up_at: "2025-05-15T08:51:40.403Z", last_active_at: "2026-04-28T08:51:40.557Z" },
+  { first_name: "Emily", last_name: "Carter", email: "emily.carter@pennine.wobbleboard.example", role: "employee", company_name: "Pennine Financial Services", signed_up_at: "2025-03-27T09:51:40.403Z", last_active_at: "2026-04-23T08:51:40.557Z" },
+  { first_name: "Hannah", last_name: "Clarke", email: "hannah.clarke@pennine.wobbleboard.example", role: "employee", company_name: "Pennine Financial Services", signed_up_at: "2025-05-16T08:51:40.403Z", last_active_at: "2026-04-19T08:51:40.557Z" },
+  { first_name: "Harry", last_name: "Phillips", email: "harry.phillips@pennine.wobbleboard.example", role: "employee", company_name: "Pennine Financial Services", signed_up_at: "2025-04-13T08:51:40.403Z", last_active_at: "2026-04-30T08:51:40.557Z" },
+  { first_name: "William", last_name: "Hughes", email: "william.hughes@pennine.wobbleboard.example", role: "employee", company_name: "Pennine Financial Services", signed_up_at: "2025-05-18T08:51:40.403Z", last_active_at: "2026-04-22T08:51:40.557Z" },
+
+  // GreenLeaf Healthcare (7)
+  { first_name: "Hannah", last_name: "Turner", email: "hannah.turner@greenleaf.wobbleboard.example", role: "hr_admin", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-07-29T08:51:40.403Z", last_active_at: "2026-04-29T08:51:40.557Z" },
+  { first_name: "Henry", last_name: "Hall", email: "henry.hall@greenleaf.wobbleboard.example", role: "hr_admin", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-07-05T08:51:40.403Z", last_active_at: "2026-04-19T08:51:40.557Z" },
+  { first_name: "Ava", last_name: "Walker", email: "ava.walker@greenleaf.wobbleboard.example", role: "wellness_champion", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-07-19T08:51:40.403Z", last_active_at: "2026-04-24T08:51:40.557Z" },
+  { first_name: "Samuel", last_name: "Campbell", email: "samuel.campbell@greenleaf.wobbleboard.example", role: "wellness_champion", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-07-17T08:51:40.403Z", last_active_at: "2026-04-17T08:51:40.557Z" },
+  { first_name: "Charlotte", last_name: "Bennett", email: "charlotte.bennett@greenleaf.wobbleboard.example", role: "employee", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-08-21T08:51:40.403Z", last_active_at: "2026-04-18T08:51:40.557Z" },
+  { first_name: "Ruby", last_name: "Adams", email: "ruby.adams@greenleaf.wobbleboard.example", role: "employee", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-09-01T08:51:40.403Z", last_active_at: "2026-05-01T08:51:40.557Z" },
+  { first_name: "William", last_name: "Adams", email: "william.adams@greenleaf.wobbleboard.example", role: "employee", company_name: "GreenLeaf Healthcare", signed_up_at: "2025-09-01T08:51:40.403Z", last_active_at: "2026-04-28T08:51:40.557Z" },
+
+  // Mosaic Education Trust (3, churned)
+  { first_name: "Joseph", last_name: "Clarke", email: "joseph.clarke@mosaic.wobbleboard.example", role: "hr_admin", company_name: "Mosaic Education Trust", signed_up_at: "2025-11-24T09:51:40.403Z", last_active_at: "2026-01-14T09:51:40.557Z" },
+  { first_name: "Hannah", last_name: "Wright", email: "hannah.wright@mosaic.wobbleboard.example", role: "wellness_champion", company_name: "Mosaic Education Trust", signed_up_at: "2025-11-27T09:51:40.403Z", last_active_at: "2026-02-19T09:51:40.557Z" },
+  { first_name: "Emily", last_name: "Adams", email: "emily.adams@mosaic.wobbleboard.example", role: "employee", company_name: "Mosaic Education Trust", signed_up_at: "2025-10-26T09:51:40.403Z", last_active_at: "2026-01-21T09:51:40.557Z" },
 ];
 
-const lastNames = [
-  "Thompson", "Clarke", "Patel", "Wilson", "Davies", "Brown", "Evans",
-  "Roberts", "Johnson", "Walker", "Wright", "Robinson", "Hall", "Green",
-  "Adams", "Mitchell", "Campbell", "Phillips", "Carter", "Morris",
-  "Turner", "Parker", "Hughes", "Foster", "Bennett", "Gray",
-  "Khan", "Ali", "Singh", "O'Brien", "Murphy", "Walsh",
-];
-
-// Distribute contacts across companies: larger companies get more
-const contactDistribution: { companyIdx: number; role: string }[] = [
-  // Brightpath Logistics (1200 employees) — 10 contacts
-  { companyIdx: 0, role: "hr_admin" },
-  { companyIdx: 0, role: "hr_admin" },
-  { companyIdx: 0, role: "wellness_champion" },
-  { companyIdx: 0, role: "wellness_champion" },
-  { companyIdx: 0, role: "wellness_champion" },
-  { companyIdx: 0, role: "employee" },
-  { companyIdx: 0, role: "employee" },
-  { companyIdx: 0, role: "employee" },
-  { companyIdx: 0, role: "employee" },
-  { companyIdx: 0, role: "employee" },
-  // Fern & Oak (28 employees) — 3 contacts
-  { companyIdx: 1, role: "hr_admin" },
-  { companyIdx: 1, role: "wellness_champion" },
-  { companyIdx: 1, role: "employee" },
-  // Pennine FS (450 employees) — 7 contacts
-  { companyIdx: 2, role: "hr_admin" },
-  { companyIdx: 2, role: "wellness_champion" },
-  { companyIdx: 2, role: "wellness_champion" },
-  { companyIdx: 2, role: "employee" },
-  { companyIdx: 2, role: "employee" },
-  { companyIdx: 2, role: "employee" },
-  { companyIdx: 2, role: "employee" },
-  // GreenLeaf Healthcare (800 employees) — 7 contacts
-  { companyIdx: 3, role: "hr_admin" },
-  { companyIdx: 3, role: "hr_admin" },
-  { companyIdx: 3, role: "wellness_champion" },
-  { companyIdx: 3, role: "wellness_champion" },
-  { companyIdx: 3, role: "employee" },
-  { companyIdx: 3, role: "employee" },
-  { companyIdx: 3, role: "employee" },
-  // Mosaic Education (65 employees, churned) — 3 contacts
-  { companyIdx: 4, role: "hr_admin" },
-  { companyIdx: 4, role: "wellness_champion" },
-  { companyIdx: 4, role: "employee" },
-];
-
-// ─── Event data ────────────────────────────────────────────
+// ─── Event templates (event content remains random) ───────────────
+//
+// Product event content is intentionally NOT deterministic — events
+// are immutable in Intercom and out of scope for the reseed orphan fix
+// (see project plan 3d.4b non-goals). Subscription IDs and event IDs
+// continue to use gen_random_uuid() at the database default.
 
 const eventTemplates = [
   { name: "login", metadata: () => ({}) },
@@ -186,13 +235,29 @@ const eventTemplates = [
   },
 ];
 
-// ─── Main seed function ────────────────────────────────────
+// ─── Main seed function ────────────────────────────────────────────
 
 async function seed() {
+  dotenv.config({ path: resolve(__dirname, "../.env.local") });
+
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  );
+
   console.log("🌱 Seeding Wobbleboard database...\n");
 
-  // 1. Insert companies
-  const companyRows = companies.map(({ domain, plan_tier, status, billing_cycle, ...c }) => c);
+  // 1. Insert companies with deterministic UUIDs.
+  const companyRows = COMPANIES.map((c) => ({
+    id: companyId(c.name),
+    name: c.name,
+    industry: c.industry,
+    mrr: c.mrr,
+    employee_count: c.employee_count,
+    created_at: c.created_at,
+  }));
+
   const { data: insertedCompanies, error: compErr } = await supabase
     .from("companies")
     .insert(companyRows)
@@ -201,18 +266,13 @@ async function seed() {
   if (compErr) throw new Error(`Companies insert failed: ${compErr.message}`);
   console.log(`✓ ${insertedCompanies!.length} companies inserted`);
 
-  // 2. Insert subscriptions
-  const subscriptionRows = companies.map((c, i) => ({
-    company_id: insertedCompanies![i].id,
+  // 2. Insert subscriptions.
+  const subscriptionRows = COMPANIES.map((c) => ({
+    company_id: companyId(c.name),
     plan_tier: c.plan_tier,
     status: c.status,
     billing_cycle: c.billing_cycle,
-    renewal_date:
-      c.status === "churned"
-        ? null
-        : new Date(Date.now() + randomBetween(30, 365) * 86400000)
-            .toISOString()
-            .split("T")[0],
+    renewal_date: c.renewal_date,
     created_at: c.created_at,
   }));
 
@@ -224,37 +284,22 @@ async function seed() {
   if (subErr) throw new Error(`Subscriptions insert failed: ${subErr.message}`);
   console.log(`✓ ${insertedSubs!.length} subscriptions inserted`);
 
-  // 3. Insert contacts
-  const usedEmails = new Set<string>();
-  const usedNames = new Set<string>();
-  const contactRows = contactDistribution.map((cd) => {
-    let first: string, last: string, fullKey: string;
-    do {
-      first = pick(firstNames);
-      last = pick(lastNames);
-      fullKey = `${first}.${last}`;
-    } while (usedNames.has(fullKey));
-    usedNames.add(fullKey);
-
-    const company = companies[cd.companyIdx];
-    const email = `${first.toLowerCase()}.${last.toLowerCase()}@${company.domain}`;
-
-    const signedUpAt = new Date(company.created_at);
-    signedUpAt.setDate(
-      signedUpAt.getDate() + randomBetween(0, 60)
-    );
-
+  // 3. Insert contacts with deterministic UUIDs.
+  const companyByName = new Map(COMPANIES.map((c) => [c.name, c]));
+  const contactRows = CONTACTS.map((c) => {
+    const company = companyByName.get(c.company_name);
+    if (!company) {
+      throw new Error(`Unknown company in contact seed: ${c.company_name}`);
+    }
     return {
-      company_id: insertedCompanies![cd.companyIdx].id,
-      first_name: first,
-      last_name: last,
-      email,
-      role: cd.role,
-      signed_up_at: signedUpAt.toISOString(),
-      last_active_at:
-        company.status === "churned"
-          ? daysAgo(randomBetween(60, 120))
-          : daysAgo(randomBetween(0, 14)),
+      id: contactId(c.email),
+      company_id: companyId(company.name),
+      first_name: c.first_name,
+      last_name: c.last_name,
+      email: c.email,
+      role: c.role,
+      signed_up_at: c.signed_up_at,
+      last_active_at: c.last_active_at,
     };
   });
 
@@ -266,13 +311,13 @@ async function seed() {
   if (conErr) throw new Error(`Contacts insert failed: ${conErr.message}`);
   console.log(`✓ ${insertedContacts!.length} contacts inserted`);
 
-  // 4. Insert product events
-  // Group contacts by company for event distribution
-  const contactsByCompany: Record<number, string[]> = {};
-  contactDistribution.forEach((cd, i) => {
-    if (!contactsByCompany[cd.companyIdx]) contactsByCompany[cd.companyIdx] = [];
-    contactsByCompany[cd.companyIdx].push(insertedContacts![i].id);
-  });
+  // 4. Insert product events (random, scope: out of 3d.4b).
+  const contactsByCompany = new Map<string, string[]>();
+  for (const c of CONTACTS) {
+    const list = contactsByCompany.get(c.company_name) ?? [];
+    list.push(contactId(c.email));
+    contactsByCompany.set(c.company_name, list);
+  }
 
   const eventRows: Array<{
     contact_id: string;
@@ -281,30 +326,21 @@ async function seed() {
     timestamp: string;
   }> = [];
 
-  for (let compIdx = 0; compIdx < companies.length; compIdx++) {
-    const company = companies[compIdx];
-    const companyContacts = contactsByCompany[compIdx] || [];
-    if (companyContacts.length === 0) continue;
+  for (const company of COMPANIES) {
+    const ids = contactsByCompany.get(company.name) ?? [];
+    if (ids.length === 0) continue;
 
-    // Churned company: events clustered 60-90 days ago, then dropping off
-    // Active companies: events spread over last 90 days
-    const eventsForCompany =
-      company.status === "churned" ? 8 : randomBetween(18, 28);
+    const eventsForCompany = company.status === "churned" ? 8 : randomBetween(18, 28);
 
     for (let e = 0; e < eventsForCompany; e++) {
       const template = pick(eventTemplates);
-      const contactId = pick(companyContacts);
-
-      let eventDaysAgo: number;
-      if (company.status === "churned") {
-        // Cluster events 60-120 days ago
-        eventDaysAgo = randomBetween(60, 120);
-      } else {
-        eventDaysAgo = randomBetween(0, 90);
-      }
-
+      const cid = pick(ids);
+      const eventDaysAgo =
+        company.status === "churned"
+          ? randomBetween(60, 120)
+          : randomBetween(0, 90);
       eventRows.push({
-        contact_id: contactId,
+        contact_id: cid,
         event_name: template.name,
         metadata: template.metadata(),
         timestamp: daysAgo(eventDaysAgo),
@@ -325,15 +361,25 @@ async function seed() {
   console.log("\nCompanies:");
   insertedCompanies!.forEach((c, i) => {
     const sub = insertedSubs![i];
-    console.log(
-      `  ${c.name} — ${sub.plan_tier} (${sub.status})`
-    );
+    console.log(`  ${c.name} — ${sub.plan_tier} (${sub.status}) [id ${c.id}]`);
   });
   console.log(`\nContacts: ${insertedContacts!.length}`);
   console.log(`Events:   ${insertedEvents!.length}`);
 }
 
-seed().catch((err) => {
-  console.error("❌ Seed failed:", err);
-  process.exit(1);
-});
+// Only auto-invoke when run directly via tsx — either as `npm run seed`
+// (entry: scripts/seed.ts) or via `npm run reset` (entry: scripts/reset.ts,
+// which `await import`s this module and relies on its top-level execution).
+// Vitest imports this module to test exports — that path must not trigger
+// seed().
+const isMainEntry =
+  typeof process !== "undefined" &&
+  typeof process.argv[1] === "string" &&
+  /(seed|reset)\.(ts|js|cjs|mjs)$/.test(process.argv[1]);
+
+if (isMainEntry) {
+  seed().catch((err) => {
+    console.error("❌ Seed failed:", err);
+    process.exit(1);
+  });
+}
