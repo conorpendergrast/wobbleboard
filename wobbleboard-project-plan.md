@@ -44,37 +44,70 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
 - [x] All 9 tests passing (auth, 404s, 400s, valid responses)
 - [ ] **TODO: Configure 2 new Data Connectors in Intercom + test with Fin**
 
-## Phase 3d: Subscription Update Connector (POST) ⬅️ NEXT UP
-*Branch: `phase-3d-subscription-updates`*
+## Phase 3d: Write-capable Data Connectors
 
-**Goal:** Enable Fin to autonomously update subscriptions (plan tier changes + cancellations) via a POST Data Connector. Validates the direct-POST path so we capture every Intercom POST bug as consulting material.
+### 3d.1 Supabase mutation layer ✅
+- [x] PATCH endpoint for subscriptions (plan tier change + cancellation)
+- [x] Vitest harness with hand-rolled Supabase mocks (24 tests)
+- [x] PR #5 merged
 
-**Architecture:** Supabase-first writes — API mutates Supabase, then pushes attribute updates to Intercom. Supabase remains source of truth.
+### 3d.2 Intercom POST connector + bug capture ✅
+- [x] POST connector configured in Intercom UI
+- [x] All happy paths verified end-to-end
+- [x] All error paths verified (400, 404, 409, idempotent no-op)
+- [x] Direct POST works — no Cloudflare Worker fallback needed
+- [x] Bug capture template committed (PR #6)
+- **Finding:** Direct POST to a third-party API now works cleanly in 2026.
+  Worth one entry in `docs/intercom-api-gotchas.md` under
+  "Surprises that aren't bugs".
 
-### 3d.1 — Supabase mutation layer
-- [x] `POST /api/intercom/subscriptions` endpoint
-- [x] Accepts: `company_id` (UUID), `action` (`change_plan` | `cancel`), `new_plan_tier` (optional, required when action is `change_plan`)
-- [x] Updates Supabase `subscriptions` table first
-- [x] Pushes updated company attributes to Intercom (`plan_tier`, `subscription_status`)
-- [x] Bearer token auth (reuse `src/lib/api-auth.ts`)
-- [x] Validation: reject invalid plan tiers, reject cancel-on-already-cancelled, reject unknown company UUIDs
-- [x] Returns structured success/error response Fin can render to the customer
-- [x] Tests: success cases, validation failures, auth failures, Intercom sync failure handling
+### 3d.3 Fin wiring + demo script + e2e tests 📋
+- [ ] Wire Fin to call the POST connector autonomously on plan-change
+      and cancel intents
+- [ ] Cancellation-confirmation guardrail (Fin must confirm before posting)
+- [ ] Rehearsed demo script
+- [ ] E2E test pass against the live workspace
+- **Blocked by 3d.4a** — must not demo against a workspace that lies
+  about cleanup state.
 
-### 3d.2 — Intercom Data Connector configuration
-- [ ] Configure POST connector in Intercom UI
-- [ ] **Document every POST bug encountered** (Content-Type defaulting, JSON body double-encoding, URL mangling) — this is consulting gold and feeds directly into the paid email sequence
-- [ ] Configure Fin to call connector autonomously on plan-change / cancellation requests
-- [ ] Fin guardrails: confirmation step before executing cancellation (irreversible action best practice)
-- [ ] Decision point: if direct POST is unworkable, pivot to Cloudflare Worker proxy as fallback
+### 3d.4a Fix cleanup:intercom silent failure ⬅ NEXT
+- [ ] Add verify-after-delete to `cleanup:intercom`
+- [ ] Surface honest output (no false "5/5 ✓" when DELETE no-ops)
+- [ ] Output lists undeletable company IDs + dashboard URLs for
+      manual cleanup
+- [ ] Tests covering the 200-but-not-deleted case
+- [ ] Manual UI cleanup of current 10 orphan companies (after code merge)
+- [ ] Document the manual UI click-path in
+      `docs/intercom-api-gotchas.md`
+- **Why urgent:** the current script reports success while doing nothing.
+  Not safe to run sales demos against a workspace cleaned by a lying script.
 
-### 3d.3 — Demo script + test cases
-- [ ] End-to-end test: customer asks to upgrade → Fin executes → Supabase + Intercom both reflect change
-- [ ] End-to-end test: customer asks to cancel → Fin confirms intent → executes → both systems updated
-- [ ] Test: invalid plan tier requested → Fin handles error gracefully
-- [ ] Test: already-cancelled subscription → Fin handles error gracefully
-- [ ] Reset script verified to restore demo state cleanly between runs
-- [ ] Document the demo narrative for sales calls
+### 3d.4b Stable UUIDs/emails in seed.ts 📋
+- [ ] Switch `companies.id` to stable values (hardcoded UUIDs or
+      deterministic from company name)
+- [ ] Switch contact emails to deterministic
+      (`role-N@domain.wobbleboard.example`)
+- [ ] Verify Intercom `company_id`-based upsert actually updates in place
+- [ ] Verify the existing 409 contact handler kicks in on email collision
+- [ ] Test: 3 back-to-back reseed cycles → zero orphan growth in Intercom
+
+### 3d.4c reset:full command 📋
+- [ ] Build on top of 3d.4a (honest cleanup) + 3d.4b (no orphans by design)
+- [ ] Detach contacts from companies before deleting contacts
+- [ ] Retry-with-backoff for search-index propagation lag (up to 60s)
+- [ ] Skip company DELETE entirely — rely on upserts from 3d.4b
+- [ ] Events: skip by default, separate explicit y/n prompt
+      (per CLAUDE.md hard rule)
+
+### 3d.4d Intercom API gotchas doc 📋
+- [ ] Rename `docs/phase-3d-intercom-post-bugs.md` →
+      `docs/intercom-api-gotchas.md`
+- [ ] Add entry: `DELETE /companies/{id}` returns 200, doesn't delete
+- [ ] Add entry: `GET /companies` LIST endpoint desynced from direct GET
+- [ ] Add entry: search-index propagation lag (60+ seconds)
+- [ ] Add entry: Surprises — direct POST works cleanly in 2026
+- **Consulting use:** these four findings are the spine of the
+  "5 mistakes" Bento email
 
 ## Phase 3e: Frontend Edit Functionality 📋
 - [ ] Edit company/contact data from the frontend
@@ -87,11 +120,28 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
 - [ ] Allows demoing the end-user support experience
 - [ ] Fin answers questions and executes subscription updates using Data Connector data in real time
 
+## Phase 3g: Supabase API auth hardening 📋
+- [ ] Replace service-role-key Supabase client in API routes with
+      scoped access (anon key + RLS, or per-request scoped JWTs)
+- [ ] RLS policies on companies, contacts, subscriptions, product_events
+- [ ] Migration plan: route-by-route swap, tests covering every endpoint
+- [ ] Decision needed: anon key + RLS vs custom JWT per request
+- **Framing:** clean migration. Not a demo-able before/after — once it's
+  done it's done.
+
 ## Phase 4: Polish & Demo Readiness 📋
 - [ ] Merge all branches to main
 - [ ] End-to-end demo walkthrough test
 - [ ] README with setup instructions (for future reference)
 - [ ] Consider: custom domain (e.g. demo.wobbleboard.example)
+
+## Standing rule: pre-demo reset
+After 3d.4a, 3d.4b, and 3d.4c land:
+```
+npm run reset:full        # idempotent, honest about what it can't clean
+```
+Until then, manual UI cleanup of demo companies is required between
+significant demo cycles. See `docs/intercom-api-gotchas.md`.
 
 ---
 
