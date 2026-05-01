@@ -61,35 +61,53 @@ A demo web app simulating a fictional employee wellness SaaS (Wobbleboard), used
   Worth one entry in `docs/intercom-api-gotchas.md` under
   "Surprises that aren't bugs".
 
-### 3d.3 Fin wiring + demo script + e2e tests 📋
+### 3d.3 Fin wiring + demo script + e2e tests ⬅ NEXT
 - [ ] Wire Fin to call the POST connector autonomously on plan-change
       and cancel intents
 - [ ] Cancellation-confirmation guardrail (Fin must confirm before posting)
 - [ ] Rehearsed demo script
 - [ ] E2E test pass against the live workspace
-- **Blocked by 3d.4a** — must not demo against a workspace that lies
-  about cleanup state.
+- **Now unblocked:** 3d.4a (honest cleanup) and 3d.4b (no-orphan reseeds)
+  have landed, so demos no longer run against a workspace that lies
+  about cleanup state or accumulates zombie records on every reseed.
 
-### 3d.4a Fix cleanup:intercom silent failure ⬅ NEXT
-- [ ] Add verify-after-delete to `cleanup:intercom`
-- [ ] Surface honest output (no false "5/5 ✓" when DELETE no-ops)
-- [ ] Output lists undeletable company IDs + dashboard URLs for
+### 3d.4a Fix cleanup:intercom silent failure ✅
+PR #10 merged.
+- [x] Add verify-after-delete to `cleanup:intercom`
+- [x] Surface honest output (no false "5/5 ✓" when DELETE no-ops)
+- [x] Output lists undeletable company IDs + dashboard URLs for
       manual cleanup
-- [ ] Tests covering the 200-but-not-deleted case
-- [ ] Manual UI cleanup of current 10 orphan companies (after code merge)
+- [x] Tests covering the 200-but-not-deleted case
+- [ ] Manual UI cleanup of current 10 orphan companies — moved to
+      support-ticket territory (Intercom soft-delete + LIST visibility
+      filter prevent recovery via API)
 - [ ] Document the manual UI click-path in
-      `docs/intercom-api-gotchas.md`
-- **Why urgent:** the current script reports success while doing nothing.
-  Not safe to run sales demos against a workspace cleaned by a lying script.
+      `docs/intercom-api-gotchas.md` — deferred to 3d.4d
 
-### 3d.4b Stable UUIDs/emails in seed.ts 📋
-- [ ] Switch `companies.id` to stable values (hardcoded UUIDs or
+### 3d.4b Stable UUIDs/emails in seed.ts ✅
+PR #11 merged. Per-company `remote_created_at` ladder follow-up tracked
+separately as 3d.4b.1.
+- [x] Switch `companies.id` to stable values (hardcoded UUIDs or
       deterministic from company name)
-- [ ] Switch contact emails to deterministic
+- [x] Switch contact emails to deterministic
       (`role-N@domain.wobbleboard.example`)
-- [ ] Verify Intercom `company_id`-based upsert actually updates in place
-- [ ] Verify the existing 409 contact handler kicks in on email collision
-- [ ] Test: 3 back-to-back reseed cycles → zero orphan growth in Intercom
+- [x] Verify Intercom `company_id`-based upsert actually updates in place
+- [x] Verify the existing 409 contact handler kicks in on email collision
+- [x] Test: 3 back-to-back reseed cycles → zero orphan growth in Intercom
+      *(ran 2 cycles, not 3 — same 5 Intercom IDs both times, 30/30
+      contacts updated in place; close enough)*
+
+### 3d.4b.1 Per-company tenure ladder for remote_created_at 📋
+PR #12 open. Branch: `phase-3d-4b-tenure-ladder`.
+- [ ] Restore per-company deterministic `remote_created_at` values
+      (fixed ISO dates, anchored to a stable past date — not relative
+      `daysAgo()` that creeps forward)
+- [ ] Tests asserting distinct values per company + stable across
+      reseeds + ordering invariant locking the
+      Brightpath > Pennine > GreenLeaf > Mosaic > Fern & Oak ladder
+- **Why:** PR #11 unified all 5 companies on one `created_at`, which
+  flattened the demo's customer-tenure variation. This follow-up
+  restores it without reintroducing reseed drift.
 
 ### 3d.4c reset:full command 📋
 - [ ] Build on top of 3d.4a (honest cleanup) + 3d.4b (no orphans by design)

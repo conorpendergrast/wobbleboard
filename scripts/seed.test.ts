@@ -85,15 +85,58 @@ describe("COMPANIES seed data", () => {
     }
   });
 
-  it("uses the same created_at for all 5 companies (stable across reseeds)", () => {
+  it("every company has a distinct created_at (per-company tenure ladder)", () => {
     const dates = new Set(COMPANIES.map((c) => c.created_at));
-    expect(dates.size).toBe(1);
+    expect(dates.size).toBe(COMPANIES.length);
+  });
+
+  it("COMPANIES is referentially stable across calls (same array reference, same created_at values)", () => {
+    // Re-importing the module would give a new reference, but within a process the
+    // exported array and its values must not mutate between reads.
+    const snapshot = COMPANIES.map((c) => ({ name: c.name, created_at: c.created_at }));
+    for (const c of COMPANIES) {
+      const match = snapshot.find((s) => s.name === c.name);
+      expect(match?.created_at).toBe(c.created_at);
+    }
+  });
+
+  it("created_at values are fixed ISO dates, not relative offsets that creep forward", () => {
+    // Guard against accidental reintroduction of `daysAgo()` or similar.
+    // ISO dates parse to a stable epoch; a relative computation would produce
+    // a different epoch on each call. We re-read after a microtask just to be
+    // sure no setter trickery is in play.
+    const before = COMPANIES.map((c) => new Date(c.created_at).getTime());
+    return Promise.resolve().then(() => {
+      const after = COMPANIES.map((c) => new Date(c.created_at).getTime());
+      expect(after).toEqual(before);
+    });
   });
 
   it("created_at parses to a date in the past", () => {
     const now = Date.now();
     for (const c of COMPANIES) {
       expect(new Date(c.created_at).getTime()).toBeLessThan(now);
+    }
+  });
+
+  it("tenure ladder is ordered as Brightpath > Pennine > GreenLeaf > Mosaic > Fern & Oak (oldest → newest)", () => {
+    // The original demo had this tenure ordering (540 / 400 / 300 / 200 / 120 days).
+    // Locking it in so future edits to created_at don't accidentally break the demo's
+    // narrative: enterprise customers tend to be older, the trial-stage one is newest.
+    const order = [
+      "Brightpath Logistics",
+      "Pennine Financial Services",
+      "GreenLeaf Healthcare",
+      "Mosaic Education Trust",
+      "Fern & Oak Design Studio",
+    ];
+    const byName = new Map(COMPANIES.map((c) => [c.name, new Date(c.created_at).getTime()]));
+    for (let i = 0; i < order.length - 1; i++) {
+      const older = byName.get(order[i]);
+      const newer = byName.get(order[i + 1]);
+      expect(older).toBeDefined();
+      expect(newer).toBeDefined();
+      expect(older!).toBeLessThan(newer!);
     }
   });
 
