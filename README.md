@@ -69,8 +69,8 @@ Each phase has: **goal · who does what · verification · failure recovery**. C
 
 - **Goal:** capture an Intercom access token and confirm the workspace region.
 - **You:** in Intercom **Developer Hub**, create a new app, grant the scopes Read and write contacts, Read and write companies, Write events, and Read and write data attributes. Copy the access token. Tell Claude the workspace region (US, EU, or AU).
-- **Claude:** use `Edit` to set `INTERCOM_ACCESS_TOKEN` and `INTERCOM_REGION` (one of `us`, `eu`, `au`) in `.env.local`. Verify the token by running a single `curl -sf -H "Authorization: Bearer $TOKEN" -H "Intercom-Version: 2.11" https://api.<region>.intercom.io/me` — pull the token from `.env.local` for the call but don't print it. (For US, the host is `api.intercom.io` with no region prefix.)
-- **Verify:** the `/me` call returns a 200 with an `app` object whose region matches what the user said.
+- **Claude:** use `Edit` to set `INTERCOM_ACCESS_TOKEN` and `INTERCOM_REGION` (one of `us`, `eu`, `au`) in `.env.local`. Verify the token by running a single `curl -sf -H "Authorization: Bearer $TOKEN" -H "Intercom-Version: 2.11" https://api.<region>.intercom.io/me` — pull the token from `.env.local` for the call but don't print it. (For US, the host is `api.intercom.io` with no region prefix.) Also set `INTERCOM_WORKSPACE_ID` from the `app.id_code` field in the `/me` response (or ask the user for the segment after `/a/apps/` in any Intercom dashboard URL). It's only consumed by `npm run cleanup:intercom` to print clickable dashboard URLs, but the script errors out at start if it's missing.
+- **Verify:** the `/me` call returns a 200 with an `app` object whose region matches what the user said. `grep -c '^INTERCOM_WORKSPACE_ID=.\+' .env.local` returns 1.
 - **Failure recovery:** 401 → wrong token, ask the user to regenerate. Region mismatch in the `/me` response → update `INTERCOM_REGION` in `.env.local` to match what `/me` reports.
 
 #### Phase 5 — Connector API key
@@ -119,7 +119,7 @@ When Claude pauses for input, you'll need:
 - [ ] Supabase service_role key (Phase 2)
 - [ ] Choice of schema option A or B (Phase 3)
 - [ ] Confirmation that tables exist in Table Editor (Phase 3, if Option A)
-- [ ] Intercom access token + region (Phase 4)
+- [ ] Intercom access token + region + workspace ID (Phase 4)
 - [ ] Confirmation to run `npm run sync:events` (Phase 7)
 - [ ] Visual confirmation the dashboard rendered (Phase 8)
 
@@ -210,9 +210,12 @@ SUPABASE_SERVICE_ROLE_KEY=<service_role secret from step 2>
 INTERCOM_REGION=us           # or eu, au — match your workspace
 INTERCOM_ACCESS_TOKEN=<access token from step 3>
 INTERCOM_CONNECTOR_API_KEY=<the openssl output from step 4>
+INTERCOM_WORKSPACE_ID=<your Intercom workspace ID — see below>
 ```
 
 `.env.local` is gitignored — never commit it. The four `*_KEY`/`*_TOKEN`/`*_URL` variables are required; missing any of them will cause the dev server or scripts to fail with a non-null-assertion error at startup. `INTERCOM_REGION` defaults to `us` if unset.
+
+**`INTERCOM_WORKSPACE_ID`** is required by `npm run cleanup:intercom` to construct clickable dashboard URLs for companies Intercom won't delete via API (you'll need them to finish cleanup manually). The script aborts if it's missing. To find the value, open any page in your Intercom dashboard and copy the segment after `/a/apps/` in the URL — e.g. in `https://app.intercom.com/a/apps/uq9fbojb/inbox`, the workspace ID is `uq9fbojb`. It's also the `app.id_code` field returned by `GET /me`. Set the same value in your Vercel project env vars when you deploy.
 
 ### 6. Seed the database with demo data
 
@@ -404,5 +407,5 @@ Errors: `400` missing `company_id`, `401` bad/missing auth, `404` company not fo
 
 The app is a standard Next.js 16 application and deploys cleanly to Vercel. After importing the repo:
 
-1. Add the same environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INTERCOM_ACCESS_TOKEN`, `INTERCOM_CONNECTOR_API_KEY`, and `INTERCOM_REGION` if your workspace isn't US) in the Vercel project settings.
+1. Add the same environment variables (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `INTERCOM_ACCESS_TOKEN`, `INTERCOM_CONNECTOR_API_KEY`, `INTERCOM_WORKSPACE_ID`, and `INTERCOM_REGION` if your workspace isn't US) in the Vercel project settings.
 2. Deploy. The schema and seed scripts are not run automatically — apply the migration to your production Supabase project manually, and only run `npm run seed` against production if you actually want demo data there.

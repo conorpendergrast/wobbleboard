@@ -1,57 +1,72 @@
-# Intercom Data Connector POST bugs — field notes
+# Intercom API gotchas
 
-Capture log for Phase 3d.2: configuring the POST Data Connector for
-`/api/intercom/subscriptions`. Notes are written during the session, in shorthand.
-Polish happens later.
+> **Status:** Stub — full version with examples, reproduction steps,
+> and additional findings tracked as Phase 3d.4d in
+> `wobbleboard-project-plan.md`. The original bug-capture template
+> that lived under this filename is preserved at
+> [`docs/archive/intercom-api-gotchas-template.md`](archive/intercom-api-gotchas-template.md).
 
-## Session metadata
+Documented Intercom API behaviours that surprise developers building
+integrations. Four findings from Wobbleboard's Phase 3d work, with
+sources from Intercom's own documentation.
 
-- **Date:**
-- **Endpoint URL configured:**
-- **Auth header configured:**
-- **Connector test method:** (Intercom's "Test connector" UI / live Fin conversation / both)
+## 1. `DELETE /companies/{id}` archives, doesn't hard-delete
 
-## Pre-flight checklist (test deliberately, don't wait for bugs to find you)
+The Companies API's delete verb is a soft-delete: the record is
+archived and disappears from list responses, but the ID and data are
+retained. There is no public hard-delete endpoint; permanent removal
+requires a support ticket.
 
-For each, note: did Intercom send what I expected? If not, what did it send?
+Source: Intercom community discussion on hard-deleting companies,
+[community.intercom.com](https://community.intercom.com/).
 
-- [ ] **Content-Type header.** Did Intercom default to `application/json`, send something else, or omit it?
-- [ ] **JSON body encoding.** Did the body arrive as raw JSON, double-encoded as a JSON string, or wrapped in some Intercom envelope?
-- [ ] **URL handling.** Did the URL arrive intact, or did Intercom modify it (path mangling, query string reordering, trailing slash addition/removal)?
-- [ ] **Authorization header.** Did the bearer token arrive in the format the endpoint expects?
-- [ ] **Variable substitution.** Did Fin's `{company_id}` etc. get substituted before the POST, or did it arrive literally?
-- [ ] **Error response handling.** When the endpoint returns 4xx/5xx, does Intercom surface the response body to Fin, or just the status code?
-- [ ] **Timeout behaviour.** What happens if the endpoint takes 6+ seconds to respond?
-- [ ] **Empty/missing fields.** What happens when Fin doesn't have a value for a required field?
+**Practical implication:** treat company DELETE as a hide operation.
+If your integration may re-create a company later, use upserts keyed
+on `company_id` so the archived record is reused instead of
+duplicated.
 
-## Bugs encountered
+## 2. `GET /companies` LIST hides companies failing visibility filters
 
-For each bug, fill in:
+The list endpoint silently excludes companies where `user_count == 0`
+or where `remote_created_at` is null. The records exist and are
+reachable by direct GET on the ID, but they will not appear in any
+LIST response or in the dashboard's Companies index.
 
-### Bug N — [short title]
+Source: Intercom Help Center, ["People list and company list
+explained"](https://www.intercom.com/help/).
 
-- **Category:** content-type / body-encoding / URL / auth / substitution / error-handling / timeout / other
-- **What I tried:** (the connector configuration / the Fin prompt / the test input)
-- **What I expected:** (a sentence)
-- **What actually happened:** (a sentence — paste error messages verbatim)
-- **Evidence:** (request log / screenshot path / Vercel function log timestamp)
-- **Workaround:** (what made it work, or "none found")
-- **Severity for consulting clients:** high / medium / low
-- **Notes:**
+**Practical implication:** every company created via API must have
+`remote_created_at` set and at least one contact attached, or it
+becomes invisible to your own tooling. Wobbleboard's seed sets both
+in the same pass for this reason.
 
-(Repeat the block for each bug.)
+## 3. Search-index propagation lag of 60+ seconds
 
-## Surprises that aren't bugs
+After a successful POST to create or update a contact or company, the
+record may not appear in `/contacts/search` or `/companies/search`
+results for up to ~60 seconds. A direct GET on the returned ID
+succeeds immediately; the search index is eventually consistent.
 
-Things that were unintuitive but turned out to be working as designed. Worth
-noting because clients will hit them too.
+Source: Wobbleboard's own audit —
+[`docs/phase-3d-4-reseed-audit.md`](phase-3d-4-reseed-audit.md).
 
-## Open questions for Intercom support / docs
+**Practical implication:** verify writes via direct GET on the ID
+returned by the POST, not via search. If you must use search (e.g.
+look-up by external_id), retry with backoff up to ~60s before
+treating the record as missing.
 
-Things that aren't bugs but the docs don't explain.
+## 4. Direct POST works cleanly in 2026 (the surprise)
 
-## Session end
+Community posts from 2023–2024 warned that Intercom's Data Connector
+POSTs needed a proxy layer to fix URL mangling, double-JSON-encoded
+bodies, or missing `Content-Type` headers. None of those failure
+modes reproduced during Phase 3d.2's direct POST connector work.
 
-- **Connector working end-to-end?** yes / no / partially
-- **Decision on direct POST vs Cloudflare Worker proxy:**
-- **Time spent:**
+Source: Wobbleboard's Phase 3d.2 verification (no Cloudflare Worker
+proxy was added; the connector against `/api/intercom/subscriptions`
+works end-to-end).
+
+**Practical implication:** new integrations don't need a proxy by
+default. Reach for a Cloudflare Worker only if you hit a specific
+reproducible failure on a current Intercom version — and please open
+an issue against this repo so this list can be updated.
