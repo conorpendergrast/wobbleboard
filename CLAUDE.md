@@ -70,6 +70,17 @@ These apply to every session, not just setup:
 
 Four tables defined in `supabase/migrations/001_initial_schema.sql`: `companies`, `contacts`, `subscriptions`, `product_events`. The README "Database" section has the field-level details. New migrations should land in the same directory as `00N_<name>.sql`.
 
+**New tables in `public` need explicit Data API grants.** Supabase is removing the default-grant behaviour: from 2026-05-30 for new projects, and 2026-10-30 for existing projects, tables created in `public` will not be reachable via the Data API (PostgREST / GraphQL / `supabase-js`) without an explicit `GRANT`. This project uses `supabase-js` for every `.from(...)` call, so any new table that omits grants will break server components, the `/api/intercom/*` routes, and the sync scripts once the change reaches the project. Every migration that runs `create table public.<name>` must include, in the same file:
+
+```sql
+grant select, insert, update, delete on public.<name> to service_role;
+-- Add anon / authenticated only if the table is intentionally exposed to the browser; this project does not currently use those roles.
+alter table public.<name> enable row level security;
+-- Plus whatever policies the table needs.
+```
+
+Existing tables in `001_initial_schema.sql` keep their current grants and do not need backfilling.
+
 ## What not to invent
 
 - There is no test suite yet. Don't claim tests passed unless one has been added.
